@@ -103,7 +103,7 @@ int relay_value=0x01;
 
 //String version = "1.0";
 String myIPv6 = "1:1:1::0";
-String serverIPv6 ="1:1:0";
+String serverIPv6 ="1:1:0::0";
 // setup software serial port
 SoftwareSerial mySerial(SW_SERIAL_RX_PIN, SW_SERIAL_TX_PIN); // RX, TX
 //int i2cdevicecount = 0 ; // count of connected i2c devices
@@ -235,10 +235,7 @@ ret=checkTimers(); // check for events due
 
 }
 void setShiftReg(char v){
-Serial.print("Setting:");
-Serial.println(v,BIN);  
-  
-  
+
   if(Enable_SR){
   // send data to Shift register
   
@@ -295,7 +292,7 @@ int checkWifi(){
 					// try a reset
 					setState(1);
 				};
-				printFlags();
+				
 			break;
 			case 1:
      
@@ -478,8 +475,8 @@ boolean sendBreak(){
 	
 }
 void setState(int s){
-	Serial.println("");
-	Serial.println("State:"+(String)wifi_State+" To:"+(String) s);
+	
+	Serial.println("\r\nState:"+(String)wifi_State+" To:"+(String) s);
 	delay(100);
 	wifi_State=s;
 	ledColour(s);
@@ -556,12 +553,12 @@ boolean getPacket(){ // get data packet from host
 			}
 		
 			else{
-				Serial.println("GET:no OK to CIPSEND");
+				Serial.println("GET:no OK");
 			}
 		}
 	} 
 	else{
-		Serial.println("GET:CIPSEND no > found");
+		Serial.println("GET:no > found");
 	}
 	return false;
 }
@@ -603,12 +600,12 @@ boolean sendPacket(){ // send data packet to host
 				return true;
 			}
 			else{
-				Serial.println("PUT:CIPSEND no ok ");
+				Serial.println("PUT:no ok ");
 			}
 		}
 	}
 	else{
-		Serial.println("PUT:CIPSEND no > found");		
+		Serial.println("PUT:no > found");		
 	}
 	return false;	
 }
@@ -634,7 +631,7 @@ int  checkTimers(){
 			q=q+1;
 		}
 		else{
-			Serial.println("Failed to read BMP180");
+			Serial.println("BMP180 Failed");
 		}
 	}
 	
@@ -664,7 +661,7 @@ int setupBMP(){
     Serial.println("BMP180 init success");
   else
   {
-    Serial.println("BMP180 init fail (disconnected?)");
+    Serial.println("BMP180 init fail");
   }
 }
 void flushESP(int msecs){
@@ -679,11 +676,6 @@ void flushESP(int msecs){
 	Serial.println("<Flushed");
 	delay(10);
 }
-void printFlags(){
-	if(ESPokFlag) Serial.println("OK FLAG!");			
-	if(ESPnoChangeFlag)Serial.println("No change FLAG!");
-	if(ESPerrMsgFlag)Serial.println("Error FLAG!");
-}
 void clearFlags(){
 	ESPokFlag=false;
 	ESPnoChangeFlag=false;
@@ -694,14 +686,6 @@ void clearFlags(){
 	ESPfailFlag=false;	
 }
 boolean initESP(){
-	// wifi state
-	// 0 - unknown
-	// 1 - sent reset
-	// 2 - reset ok
-	
-	// see if ESP is awake
-	//flushESP(2000);
-	// if(mySerial.find("ready")){
 	boolean line=false;
 	char r='N';
 	Serial.println("Nudge ESP..");
@@ -880,15 +864,15 @@ boolean printIP(){
 	return false;
 }
 void hardResetESP(){
-	if(reset_counter<10){	
+	if(reset_counter<50){	
                 flashme(2);
 		digitalWrite(ESP_RESET_PIN,LOW);
 		delay(200);
 		digitalWrite(ESP_RESET_PIN,HIGH);
-		Serial.println("**ESP Hard Reset**");	
+		Serial.println("**ESP Reset**");	
 	} 
 	else {
-			Serial.print("RST Count exceeded:");
+			Serial.print(">RST Count**");
 			Serial.println(reset_counter);
 	}
 	reset_counter++;
@@ -944,84 +928,12 @@ double getPressure() {
 			BMPaltitude=BMPpressure-BMPbaselinepressure;
 			return(P);
         }
-        else if(DEBUG_BMP)Serial.println("BMPERR retrieving pressure\n");
+        else if(DEBUG_BMP)Serial.println("BMPERR-pressure");
       }
-      else if(DEBUG_BMP)Serial.println("BMPERR starting pressure\n");
+      else if(DEBUG_BMP)Serial.println("BMPERR starting pressure");
     }
-    else if(DEBUG_BMP)Serial.println("BMPERR retrieving temp\n");
+    else if(DEBUG_BMP)Serial.println("BMPERR-temp");
   }
-  else if(DEBUG_BMP)Serial.println("BMPERR starting Temp\n");
+  else if(DEBUG_BMP)Serial.println("BMPERR starting Temp");
   return(0);
-}
-int I2C_ClearBus() {
-	/**
- * This routine turns off the I2C bus and clears it
- * on return SCA and SCL pins are tri-state inputs.
- * You need to call Wire.begin() after this to re-enable I2C
- * This routine does NOT use the Wire library at all.
- *
- * returns 0 if bus cleared
- *         1 if SCL held low.
- *         2 if SDA held low by slave clock stretch for > 2sec
- *         3 if SDA held low after 20 clocks.
- */
-	if(DEBUG_I2C)Serial.println("Clearing I2C");
-  TWCR &= ~(_BV(TWEN)); //Disable the Atmel 2-Wire interface so we can control the SDA and SCL pins directly
-
-  pinMode(SDA, INPUT_PULLUP); // Make SDA (data) and SCL (clock) pins Inputs with pullup.
-  pinMode(SCL, INPUT_PULLUP);
-
-  delay(500);  // Wait 2.5 secs. This is strictly only necessary on the first power
-  // up of the DS3231 module to allow it to initialize properly,
-  // but is also assists in reliable programming of FioV3 boards as it gives the
-  // IDE a chance to start uploaded the program
-  // before existing sketch confuses the IDE by sending Serial data.
-
-  boolean SCL_LOW = (digitalRead(SCL) == LOW); // Check is SCL is Low.
-  if (SCL_LOW) { //If it is held low Arduno cannot become the I2C master. 
-    return 1; //I2C bus error. Could not clear SCL clock line held low
-  }
-
-  boolean SDA_LOW = (digitalRead(SDA) == LOW);  // vi. Check SDA input.
-  int clockCount = 20; // > 2x9 clock
-
-  while (SDA_LOW && (clockCount > 0)) { //  vii. If SDA is Low,
-    clockCount--;
-  // Note: I2C bus is open collector so do NOT drive SCL or SDA high.
-    pinMode(SCL, INPUT); // release SCL pullup so that when made output it will be LOW
-    pinMode(SCL, OUTPUT); // then clock SCL Low
-    delayMicroseconds(10); //  for >5uS
-    pinMode(SCL, INPUT); // release SCL LOW
-    pinMode(SCL, INPUT_PULLUP); // turn on pullup resistors again
-    // do not force high as slave may be holding it low for clock stretching.
-    delayMicroseconds(10); //  for >5uS
-    // The >5uS is so that even the slowest I2C devices are handled.
-    SCL_LOW = (digitalRead(SCL) == LOW); // Check if SCL is Low.
-    int counter = 20;
-    while (SCL_LOW && (counter > 0)) {  //  loop waiting for SCL to become High only wait 2sec.
-      counter--;
-      delay(100);
-      SCL_LOW = (digitalRead(SCL) == LOW);
-    }
-    if (SCL_LOW) { // still low after 2 sec error
-      return 2; // I2C bus error. Could not clear. SCL clock line held low by slave clock stretch for >2sec
-    }
-    SDA_LOW = (digitalRead(SDA) == LOW); //   and check SDA input again and loop
-  }
-  if (SDA_LOW) { // still low
-    return 3; // I2C bus error. Could not clear. SDA data line held low
-  }
-
-  // else pull SDA line low for Start or Repeated Start
-  pinMode(SDA, INPUT); // remove pullup.
-  pinMode(SDA, OUTPUT);  // and then make it LOW i.e. send an I2C Start or Repeated start control.
-  // When there is only one I2C master a Start or Repeat Start has the same function as a Stop and clears the bus.
-  /// A Repeat Start is a Start occurring after a Start with no intervening Stop.
-  delayMicroseconds(10); // wait >5uS
-  pinMode(SDA, INPUT); // remove output low
-  pinMode(SDA, INPUT_PULLUP); // and make SDA high i.e. send I2C STOP control.
-  delayMicroseconds(10); // x. wait >5uS
-  pinMode(SDA, INPUT); // and reset pins as tri-state inputs which is the default state on reset
-  pinMode(SCL, INPUT);
-  return 0; // all ok
 }
