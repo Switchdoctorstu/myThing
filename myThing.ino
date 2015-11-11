@@ -236,7 +236,7 @@ ret=checkTimers(); // check for events due
 }
 void setShiftReg(char v){
 Serial.print("Setting:");
-Serial.print(v,HEX);  
+Serial.println(v,BIN);  
   
   
   if(Enable_SR){
@@ -250,14 +250,14 @@ Serial.print(v,HEX);
   Serial.print("Relays");
   // iterate thru bits
 	for(int z=0;z<8;z++){
-		if(( v & 0x80)>0){
+		if(( v & 0x01)>0){
 			digitalWrite(SR_Data,LOW);
 			Serial.print("1");  
 		} else{
 			digitalWrite(SR_Data,HIGH);
 			Serial.print("0");
 		}
-		v*=2;
+		v=v>>1;
 		// cycle clock pin
 		digitalWrite(SR_Clock,HIGH);
 		delay(2);
