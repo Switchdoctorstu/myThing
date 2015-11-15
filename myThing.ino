@@ -64,23 +64,24 @@ URL format:
   
 // definitions  
 #define Enable_SR true
+#define MAX_JSON 128
 #define SW_SERIAL_RX_PIN 10
 #define SW_SERIAL_TX_PIN 11
 #define ESP_RESET_PIN 9  
 #define char_CR 0x0D 
 #define DEBUG_BMP true 
-#define DEBUG_I2C true
 #define DEBUG_WIFI true
+#define DEBUGWATCHDOG true
 #define ESPWAIT 5000
-#define RledPin 8  // LED pin
-#define GledPin 7
-#define BledPin 6
-#define LDRPin A0
+#define RledPin 3  // LED pwm pin
+#define GledPin 5// LED pwm pin
+#define BledPin 6// LED pwm pin
+#define LDRPin A0// Light sensor pin
 #define PIRPin 12  // PIR detector Pin
 #define SR_Data 2  // shift register Pin 14
-#define SR_Clock 3 // shift register Pin 11
+#define SR_Clock 8 // shift register Pin 11
 #define SR_Reset 4 // shift register Pin 10
-#define SR_Latch 5 // shift register Pin 12
+#define SR_Latch 7 // shift register Pin 12
 // includes 
 #include "SoftwareSerial.h"
 #include <Wire.h>
@@ -89,15 +90,8 @@ URL format:
 #include <String.h>
 #include <avr/wdt.h>// watchdog
 
-boolean reportPressure = false;
-boolean reportTemperature = false;
-boolean reportAltitude = false;
-boolean reportPresence = false;
 boolean echo_txrx = true; // echo the esp to the serial port
 
-
-// int attempt=0;
-// int retries =5;
 int reset_counter=0;
 int relay_value=0x01;
 
@@ -106,12 +100,11 @@ String myIPv6 = "1:1:1::0";
 String serverIPv6 ="1:1:0::0";
 // setup software serial port
 SoftwareSerial mySerial(SW_SERIAL_RX_PIN, SW_SERIAL_TX_PIN); // RX, TX
-//int i2cdevicecount = 0 ; // count of connected i2c devices
+
 int val=0;
-time_t timeNow;    // storage for local clock
-//long millisNow;
+long timeNow;    // storage for local clock
 long sendTimer;
-long sendInterval = 120000;  // 2 mins
+long sendInterval = 300000;  // 5 mins
 long sendCounter=0;
 long rcvTimer=0;
 long rcvInterval=30000;  // 30 secs
@@ -127,7 +120,7 @@ String myServer="faceplateio.azurewebsites.net";
 String myPort="80";
 boolean packetToSendFlag = false;
 boolean packetToReceiveFlag=false;
-char ESPmsgbuffer[128];
+char ESPmsgbuffer[MAX_JSON];
 int ESPmsgCursor =0;
 boolean ESPokFlag = false;
 boolean ESPnoChangeFlag = false;
@@ -145,6 +138,7 @@ double BMPtemperature;  // Temperature of device
 //double BMPPressureHistory[48]; // 48 hour history
 
 void setup() {// the setup function runs once when you press reset or power the board
+	wdt_disable(); // disable the watchdog
 	int ret;
 	ret=setupPins(); // set the io pins
 	ret=setupSerial(); // setup the serial comms
@@ -155,7 +149,52 @@ void setup() {// the setup function runs once when you press reset or power the 
 	flashme(8);           // flash to show we're alive 
 	// scani2c(); // see what's out there 
 	setTimers(); // setup the timed task timers	
+	watchdogSetup(); // start the watchdog
+	setShiftReg(0); // set relays to off
 }
+ISR(WDT_vect) {// Watchdog timer interrupt.
+	//  careful not to use functions they may cause the interrupt to hang and
+	// prevent a reset.
+	wdt_disable();
+	if(DEBUGWATCHDOG)Serial.println("Watchdog!!");
+
+	// flash pin 13 to signal error
+	pinMode(13,OUTPUT);
+	for(int n=0;n<10;n++){
+		digitalWrite(13,LOW);
+		delay(20);
+		digitalWrite(13,HIGH);
+		delay(20);
+	}
+	asm volatile ("  jmp 0"); // Bootstrap back to zero
+}
+void watchdogSetup(void) {
+	if(DEBUGWATCHDOG)Serial.println("Setting Up Watchdog");
+// cli(); // disable all interrupts
+wdt_reset(); // reset the WDT timer
+/*
+WDTCSR configuration:
+WDIE = 1: Interrupt Enable
+WDE = 1 :Reset Enable
+WDP3 = 0; // :For 2000ms Time-out
+WDP2 = 1; // :For 2000ms Time-out
+WDP1 = 1; // :For 2000ms Time-out
+WDP0 = 1; // :For 2000ms Time-out
+*/
+
+// Enter Watchdog Configuration mode:
+WDTCSR |= (1<<WDCE) | (1<<WDE);
+// Set Watchdog settings:
+WDTCSR =  (1<<WDP3) | (1<<WDP2) | (1<<WDP1) | (0<<WDP0)  | (1<<WDIE);
+wdt_reset(); // reset the WDT timer
+//wdt_enable(); // enable watchdog
+// sei(); // enable interrupts
+pinMode(13,OUTPUT);
+digitalWrite(13,LOW); // signal by pin 13 low
+if(DEBUGWATCHDOG)Serial.println("Watchdog set");
+
+}
+
 int setupPins(){
 	pinMode(LDRPin,INPUT);
 	pinMode(RledPin,OUTPUT);
@@ -206,9 +245,9 @@ void ledColour(int d){
 		}
 } 
 void setColour(int r,int g,int b){
-	analogWrite(RledPin,r);
-	analogWrite(GledPin,g);
-	analogWrite(BledPin,b);
+	analogWrite(RledPin,255-r);
+	analogWrite(GledPin,255-g);
+	analogWrite(BledPin,255-b);
 }
 int setTimers(){
 	sendTimer=millis()+sendInterval;
@@ -224,6 +263,7 @@ void flashme(int times){
 }
 // the loop function runs over and over again forever
 void loop() {
+	wdt_reset(); // reset the watchdog
  int ret=0;
 ret=checkPresence();
 if(echo_txrx){
@@ -268,7 +308,6 @@ void setShiftReg(char v){
   Serial.println();
   }
 }
-
 int checkWifi(){
 	// wifi state
 	// 0 - unknown
@@ -394,7 +433,7 @@ int checkWifi(){
 
 					if(sendPacket()){
 						Serial.println("Sent!");
-						rcvData(20000);
+						rcvData(10000);
 						packetToSendFlag=false;
 						setState(8);
 					}
@@ -424,43 +463,66 @@ int checkWifi(){
 	return wifi_State;
 }
 void doJson(){
-	int z=0;
-	int d=0;
+	int x=0; int y=0;
+	ESPmsgCursor=0;
 	int total;
-	char command=ESPmsgbuffer[2];
-	if(command=='R'){ // relays
-		// next 8 digits are our binary outputs
-		char r = 0x00;
-		Serial.print("Relay Command:");
-		for( z=0;z<8;z++){
-			r*=2;
-			if(ESPmsgbuffer[3+z]=='1'){
-				r+=1;
-				Serial.print("1");
-			}	
-			else{
-				Serial.print("0");
+	int val[4];
+	char buffer[4];
+	for(int p=0;p<MAX_JSON;p++){
+		char command=ESPmsgbuffer[p];
+		switch(command){
+			case 'R':
+{				//Serial.print("Relay:");
+				char r = 0x00;
+				for( x=0;x<8;x++){
+					r*=2;
+					if(ESPmsgbuffer[p+x+1]=='1'){
+						r+=1;
+						//Serial.print("1");
+					}	
+					else{
+						//Serial.print("0");
+					}
+				}
+				setShiftReg(r);
+				p+=8;
+
+break;
+}
+			case 'C':
+	{
+			if(p<(MAX_JSON-10)){
+				// next 9 are our RGB values
+				Serial.print("Colour:");
+				total=0;
+				for(x=0;x<3;x++){
+					for(y=0;y<3;y++){
+						buffer[y]=ESPmsgbuffer[p+y+(x*3)+1];
+					}
+					total=atoi(buffer);
+					Serial.println(total,DEC);
+					val[x]=total;
+				}
+				setColour(val[0],val[1],val[2]);	
+				p+=9;
 			}
-		}
-			Serial.print(":");
-		Serial.println(r,HEX);
-		setShiftReg(r);
-    }
-	if(command=='C'){ // colour 
-		// next 9 are our RGB values
-		Serial.print("Colour Command:");
-		z=1;
-		total=0;
-		for(d=0;d<9;d++){
-			total+= (ESPmsgbuffer[3+d]-0x30)*z;
-			z=z*10;
-		}
-		// total is our 9 digit number
-		int r = total/1000000;
-		int g = total/1000 % 1000;
-		int b = total % 1000;
-		setColour(r,g,b);
+			break;
 	}
+			case ']':   // end of JSON
+		{		p+=128; 
+			break;
+		}
+		case 'T': // Time
+		{
+			p+=24;
+			break
+		}
+		default :
+				
+		break;
+		}
+	}
+	
 		
 }
 boolean ESPsipClose(){
@@ -479,7 +541,9 @@ void setState(int s){
 	Serial.println("\r\nState:"+(String)wifi_State+" To:"+(String) s);
 	delay(100);
 	wifi_State=s;
-	ledColour(s);
+	if(wifi_State<6){
+		ledColour(s);
+	}
 }
 int checkSerial(){
 	int q=0;
@@ -609,13 +673,16 @@ boolean sendPacket(){ // send data packet to host
 	}
 	return false;	
 }
-int printPage(int milliseconds){
+int printPage(int milliseconds, int okmax){ // return total chars read
 	double t = millis()+milliseconds;
+	int okcount=0;
 	ESPmsgCursor	=0;
 	boolean line 	=false;
 	int 	mycount		=0;
-	while(millis()<t){
+	while((millis()<t)&(okcount<okmax)){
+		ESPokFlag=false;
 		mycount+=ESPgetLine(1000);
+		if(ESPokFlag) okcount++;
 	}
 	return mycount;
 }
@@ -644,14 +711,14 @@ int  checkTimers(){
 }
 void rcvData(int n){
 	
-	if(printPage(n)>0){
+	if(printPage(n,3)>0){ // wait for 3 oks
 		Serial.print("Received:");
 			if(ESPmsgCursor>0){
 				for(int z=0;z<ESPmsgCursor;z++){
 					Serial.print(ESPmsgbuffer[z]);
 				}
-			// Interpret JSON
-			doJson();
+			Serial.println();
+			doJson();// Interpret JSON
 			}
 		Serial.println();
 	} 
@@ -725,7 +792,7 @@ int ESPgetLine(int msecs){
 	boolean line=false;
 	boolean json=false;
 	while(millis()<tim+msecs){
-		
+		wdt_reset(); // reset the watchdog
 		if(mySerial.available()){
 			r = mySerial.read();
 			charCount++;
@@ -733,7 +800,13 @@ int ESPgetLine(int msecs){
 				json=true;
 				ESPmsgCursor=0;
 			}
-			if(r==']') json=false; // end json
+			if(r==']'){ json=false; // end json
+				ESPmsgbuffer[ESPmsgCursor]=r;
+				ESPmsgCursor++;
+				if(ESPmsgCursor>126){
+					ESPmsgCursor=0;
+				}
+			}
 			if(json){
 				ESPmsgbuffer[ESPmsgCursor]=r;
 				ESPmsgCursor++;
@@ -936,4 +1009,16 @@ double getPressure() {
   }
   else if(DEBUG_BMP)Serial.println("BMPERR starting Temp");
   return(0);
+}
+boolean ESPcommand(char* command){
+	mySerial.println(command);
+	if(ESPwaitMsg(5,1000)){
+		if(ESPokFlag||ESPnoChangeFlag||ESPlinkedFlag||ESPconnectFlag){
+			// send +RST to lock in the params
+			//mySerial.println("AT+RST");
+			//delay(2000);
+			return true;
+		}
+	}
+	return false;
 }
