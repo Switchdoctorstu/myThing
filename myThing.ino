@@ -208,12 +208,10 @@ int setupPins(){
 	digitalWrite(SR_Reset,HIGH);
 	digitalWrite(SR_Clock,LOW);
 	
-	digitalWrite(RledPin,HIGH);
+	digitalWrite(RledPin,HIGH); 
 	digitalWrite(GledPin,HIGH);
 	digitalWrite(BledPin,HIGH);
-// initialize digital pin 13 as an output.
-	
-	pinMode(13, OUTPUT);
+	pinMode(13, OUTPUT); // onboard LED
   pinMode(12, INPUT);  // from PIR
   pinMode(ESP_RESET_PIN,OUTPUT); // ESP reset 
   digitalWrite(ESP_RESET_PIN,HIGH); // set it high
