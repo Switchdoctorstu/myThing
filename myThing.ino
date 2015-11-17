@@ -89,6 +89,7 @@ URL format:
 #include <SFE_BMP180.h>
 #include <String.h>
 #include <avr/wdt.h>// watchdog
+#include <EEPROM.h>
 
 boolean echo_txrx = true; // echo the esp to the serial port
 
@@ -259,8 +260,24 @@ void flashme(int times){
 		delay(200); 
 	}
 }
-// the loop function runs over and over again forever
-void loop() {
+boolean getConfig(){
+	// get the config from eeprom
+	
+	eepromGetBlock(z);
+	
+	
+	
+	
+}
+boolean eepromGetBlock(int block){ // gets Block n into messagebuffer
+	ESPmsgCursor=0;
+	for(int z=0;z<128;z++){
+		ESPmsgbuffer[z]=EEPROM.read((block*128+z));
+	}
+	return true;
+}
+/* End of Setup routines - now the runtime code */
+void loop() {// the loop function runs over and over again forever
 	wdt_reset(); // reset the watchdog
  int ret=0;
 ret=checkPresence();
