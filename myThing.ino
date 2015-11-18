@@ -65,6 +65,7 @@ URL format:
 // definitions  
 #define Enable_SR true
 #define MAX_JSON 128
+#define EE_BLOCKSIZE 64
 #define SW_SERIAL_RX_PIN 10
 #define SW_SERIAL_TX_PIN 11
 #define ESP_RESET_PIN 9  
@@ -74,9 +75,9 @@ URL format:
 #define DEBUGWATCHDOG true
 #define ESPWAIT 5000
 #define RledPin 3  // LED pwm pin
-#define GledPin 5// LED pwm pin
-#define BledPin 6// LED pwm pin
-#define LDRPin A0// Light sensor pin
+#define GledPin 5 // LED pwm pin
+#define BledPin 6 // LED pwm pin
+#define LDRPin A0 // Light sensor pin
 #define PIRPin 12  // PIR detector Pin
 #define SR_Data 2  // shift register Pin 14
 #define SR_Clock 8 // shift register Pin 11
@@ -88,15 +89,17 @@ URL format:
 #include <Time.h>
 #include <SFE_BMP180.h>
 #include <String.h>
-#include <avr/wdt.h>// watchdog
+#include <avr/wdt.h> // watchdog
 #include <EEPROM.h>
 
 boolean echo_txrx = true; // echo the esp to the serial port
 
 int reset_counter=0;
-int relay_value=0x01;
-
-//String version = "1.0";
+String 	mySSID ="Q3";
+String myPassword = "wpa-key";
+String myServer="faceplateio.azurewebsites.net";
+String myPort="80";
+String myKey="QQQ";
 String myIPv6 = "1:1:1::0";
 String serverIPv6 ="1:1:0::0";
 // setup software serial port
@@ -115,10 +118,6 @@ boolean lastPresence=false;
 
 int wifi_State = 0 ;
 
-String 	mySSID ="Q3";
-String myPassword = "pollynet";
-String myServer="faceplateio.azurewebsites.net";
-String myPort="80";
 boolean packetToSendFlag = false;
 boolean packetToReceiveFlag=false;
 char ESPmsgbuffer[MAX_JSON];
@@ -138,17 +137,18 @@ double BMPtemperature;  // Temperature of device
 //double BMPTemperatureHistory[48];
 //double BMPPressureHistory[48]; // 48 hour history
 
-void setup() {// the setup function runs once when you press reset or power the board
-	wdt_disable(); // disable the watchdog
+void setup() {		// the setup function runs once when you press reset or power the board
+	wdt_disable(); 	// disable the watchdog
 	int ret;
-	ret=setupPins(); // set the io pins
-	ret=setupSerial(); // setup the serial comms
+	setupPins(); 	// set the io pins
+	setupSerial(); 	// setup the serial comms
 	ret=setupBMP(); // initialize the pressure sensor
 	ret = getPressure();
 	BMPbaselinepressure=BMPpressure;
 	// hardResetESP(); // reset the wifi chip 
 	flashme(8);           // flash to show we're alive 
 	// scani2c(); // see what's out there 
+	getConfig(); // get the configuration details
 	setTimers(); // setup the timed task timers	
 	watchdogSetup(); // start the watchdog
 	setShiftReg(0); // set relays to off
@@ -195,8 +195,7 @@ digitalWrite(13,LOW); // signal by pin 13 low
 if(DEBUGWATCHDOG)Serial.println("Watchdog set");
 
 }
-
-int setupPins(){
+void setupPins(){
 	pinMode(LDRPin,INPUT);
 	pinMode(RledPin,OUTPUT);
 	pinMode(GledPin,OUTPUT);
@@ -216,17 +215,16 @@ int setupPins(){
   pinMode(12, INPUT);  // from PIR
   pinMode(ESP_RESET_PIN,OUTPUT); // ESP reset 
   digitalWrite(ESP_RESET_PIN,HIGH); // set it high
-	return 0;
+
   }
-int setupSerial(){
-	 // Open serial communications and wait for port to open:
+void setupSerial(){		// Open serial communications and wait for port to open: 
    Serial.begin(19200);
    delay(200);
    Serial.println("I'm awake.. are you?");
   // set the data rate for the SoftwareSerial port
    mySerial.begin(9600);
    delay(200);
-	return 0;
+	
    }
 void ledColour(int d){
 	digitalWrite(RledPin,HIGH);
@@ -248,7 +246,7 @@ void setColour(int r,int g,int b){
 	analogWrite(GledPin,255-g);
 	analogWrite(BledPin,255-b);
 }
-int setTimers(){
+void setTimers(){
 	sendTimer=millis()+sendInterval;
 	rcvTimer=millis()+rcvInterval;
 }
@@ -260,37 +258,244 @@ void flashme(int times){
 		delay(200); 
 	}
 }
-boolean getConfig(){
-	// get the config from eeprom
+boolean eepromValid(){
+	clearBuffer();
+	eepromReadBlock(0);
+	Serial.println("EEPROM ID:"+ (String) ESPmsgbuffer);
+	if(ESPmsgbuffer[0]=='s'){
+		return true;
+	}
 	
-	eepromGetBlock(z);
+	return false;
+}
+boolean getConfig(){ // get the config from eeprom
+	double t=millis()+2000;
+	char i=0x00;
+	boolean enter =false;
+	Serial.println("HIT CR NOW for config");
+			while(millis()<t){
+				while(Serial.available()){
+					i=Serial.read();
+					if(i==char_CR){
+						enter = true;
+					}
+				}
+			}
+	if(enter){
+		if(manualConfig()){
+			return true;
+		}
+	}
 	
+	if(eepromValid()){
+		if(readConfig()){
+			return true;
+		}
+	}
+	else{
+		Serial.println("Invalid EEPROM data");
+		if(manualConfig()){
+			return true;
+		};
+	}
 	
+	return false;
+}
+boolean manualConfig(){
+	boolean t;
+	String inLine="";
+	Serial.println("Manual Config");
+	if(eepromValid()){ // read the previous config if there was one.
+		t=readConfig();
+	}
 	
+	while (validateConfig()==false){
+		
+		Serial.println("SSID:"+ mySSID);
+		inLine=getSerial();
+		inLine.trim();
+		if(inLine.length()>0){
+			mySSID=inLine;
+		}
+		Serial.println("WiFi Key:"+ myPassword);
+		inLine=getSerial();
+		inLine.trim();
+		if(inLine.length()>0){
+			myPassword=inLine;
+		}
+		Serial.println("Server:"+ myServer);
+		inLine=getSerial();
+		inLine.trim();
+		if(inLine.length()>0){
+			myServer=inLine;
+		}
+		Serial.println("Port:"+ myPort);
+		inLine=getSerial();
+		inLine.trim();
+		if(inLine.length()>0){
+			myPort=inLine;
+		}
+		Serial.println("MyIPV6:"+ myIPv6);
+		inLine=getSerial();
+		inLine.trim();
+		if(inLine.length()>0){
+			myIPv6=inLine;
+		}
+		Serial.println("ServerIPV6:"+ serverIPv6);
+		inLine=getSerial();
+		inLine.trim();
+		if(inLine.length()>0){
+			serverIPv6 = inLine;
+		}
+	}
+	Serial.println("Saving Config..");
+	if(saveConfig()){
+		if(readConfig() && validateConfig()) return true;
+	}
+	
+	return false;
+}
+String getSerial(){
+	String input="";
+	boolean CRflag=false;
+	char c[2];
+	char i;
+	c[0]='*';
+	c[1]=0x00;
+	while (!CRflag){
+		while(Serial.available()){
+		
+			i = Serial.read();
+			if(i==char_CR){
+				CRflag=true;
+			}
+			else{
+			c[0]=i;
+			input+=c;
+			Serial.write(i);	
+			}
+		}
+	}
+	Serial.println("I:"+input);
+	return input;
+}
+boolean validateConfig(){
+	
+	String inLine="";
+	Serial.println("Validate Config");
+	Serial.println("SSID:"+mySSID);
+	//Serial.println(mySSID);
+	Serial.println("WiFi Key:" + myPassword);
+	// Serial.println( myPassword);
+	Serial.println("Server:" + myServer);
+	// Serial.println(myServer);
+	Serial.println("Port:"+ myPort);
+	// Serial.println( myPort);
+	Serial.println("MyIPV6:"+myIPv6);
+	//Serial.println( myIPv6);
+	Serial.println("ServerIPV6:"+serverIPv6);
+	// Serial.println( serverIPv6);
+	Serial.print("Correct Y/N?");
+	inLine=getSerial();
+	Serial.println();
+	inLine.trim();
+	if(inLine=="Y"){
+		return	true;
+	}
+	
+	return false;
 	
 }
-boolean eepromGetBlock(int block){ // gets Block n into messagebuffer
+boolean saveConfig(){
+
+	clearBuffer();
+	mySSID.toCharArray(ESPmsgbuffer,mySSID.length()+1);
+		eepromWriteBlock(1);
+	clearBuffer();
+	myPassword.toCharArray(ESPmsgbuffer,myPassword.length()+1);
+		eepromWriteBlock(2);
+	clearBuffer();
+	myServer.toCharArray(ESPmsgbuffer,myServer.length()+1);
+		eepromWriteBlock(3);
+	myPort.toCharArray(ESPmsgbuffer,myPort.length()+1);
+	eepromWriteBlock(4);
+	clearBuffer();
+	myIPv6.toCharArray(ESPmsgbuffer,myIPv6.length()+1);
+	eepromWriteBlock(5);
+	
+	clearBuffer();
+	serverIPv6.toCharArray(ESPmsgbuffer,serverIPv6.length()+1);
+	eepromWriteBlock(6);
+	
+	clearBuffer();
+	myKey.toCharArray(ESPmsgbuffer,myKey.length()+1);
+	eepromWriteBlock(7);
+	
+	clearBuffer();
+	ESPmsgbuffer[0]='s';
+	ESPmsgbuffer[1]='t';
+	ESPmsgbuffer[2]='u';
+	eepromWriteBlock(0);
+	// check to make sure it's still valid
+	readConfig();
+	if(validateConfig()) {
+		return true;
+	}
+
+	return false;
+}
+boolean readConfig(){
+
+		eepromReadBlock(1);
+		mySSID=ESPmsgbuffer;
+		eepromReadBlock(2);
+		myPassword=ESPmsgbuffer;
+		
+		eepromReadBlock(3);
+		myServer=ESPmsgbuffer;
+		eepromReadBlock(4);
+		myPort=ESPmsgbuffer;
+		eepromReadBlock(5);
+		myIPv6=ESPmsgbuffer;
+		eepromReadBlock(6);
+		serverIPv6=ESPmsgbuffer;
+		eepromReadBlock(7);
+		myKey=ESPmsgbuffer;
+
+	return false;
+}
+void clearBuffer(){
+	for(int z=0;z<MAX_JSON;z++){
+		ESPmsgbuffer[z]=0x00;
+	}
+}
+boolean eepromWriteBlock(int block){ // gets Block n into messagebuffer
 	ESPmsgCursor=0;
-	for(int z=0;z<128;z++){
-		ESPmsgbuffer[z]=EEPROM.read((block*128+z));
+	for(int z=0;z<EE_BLOCKSIZE;z++){
+		EEPROM.write(block*EE_BLOCKSIZE+z,ESPmsgbuffer[z]);
+	}
+	return true;
+}
+boolean eepromReadBlock(int block){ // gets Block n into messagebuffer
+	ESPmsgCursor=0;
+	for(int z=0;z<EE_BLOCKSIZE;z++){
+		ESPmsgbuffer[z]=EEPROM.read((block*EE_BLOCKSIZE+z));
 	}
 	return true;
 }
 /* End of Setup routines - now the runtime code */
-void loop() {// the loop function runs over and over again forever
-	wdt_reset(); // reset the watchdog
- int ret=0;
-ret=checkPresence();
-if(echo_txrx){
-  ret=checkSerial(); //disable echo for a moment
-}
-ret=checkWifi(); // look for wifi events 
-
-ret=checkTimers(); // check for events due
+void loop() {  			// the loop function runs over and over again forever
+	wdt_reset(); 		// reset the watchdog
+	int ret=0;
+	ret=checkPresence();
+	if(echo_txrx){
+		ret=checkSerial(); //echo for a moment
+	}
+	ret=checkWifi(); // look for wifi events 
+	ret=checkTimers(); // check for events due
 
 }
 void setShiftReg(char v){
-
   if(Enable_SR){
   // send data to Shift register
   
@@ -333,8 +538,8 @@ int checkWifi(){
 	// 5 - sent connectWifi
 	// 6 - connected
 	// 7 - asking for IP
-	// 8 - got IP
-	// 9 - sending packet
+	// 8 - got IP - steady state
+	// 9 - sending packet / busy
 	int ret;
 	//if(packetToSendFlag){
 		switch(wifi_State){
@@ -403,7 +608,6 @@ int checkWifi(){
 			break;
 			case 6://  we are connected to Wifi and have an IP address
 				// now we bind TCP to the server
-				
 				if(ESPbindTCP()){
 					setState(7);
 				}
@@ -412,18 +616,14 @@ int checkWifi(){
 					boolean z =ESPsipClose();	
 					setState(5);
 				}
-				
-			
 			break;
 			case 7:
-			
 			if(ESPsetMode()){
 				setState(8);
 			}
 			else{
 				setState(6);
 			}
-
 			break;
 			case 8:  // we're in steady state
 			if(packetToReceiveFlag){
@@ -487,7 +687,7 @@ void doJson(){
 		char command=ESPmsgbuffer[p];
 		switch(command){
 			case 'R':
-{				//Serial.print("Relay:");
+			{				//Serial.print("Relay:");
 				char r = 0x00;
 				for( x=0;x<8;x++){
 					r*=2;
@@ -502,27 +702,26 @@ void doJson(){
 				setShiftReg(r);
 				p+=8;
 
-break;
-}
-			case 'C':
-	{
-			if(p<(MAX_JSON-10)){
-				// next 9 are our RGB values
-				Serial.print("Colour:");
-				total=0;
-				for(x=0;x<3;x++){
-					for(y=0;y<3;y++){
-						buffer[y]=ESPmsgbuffer[p+y+(x*3)+1];
-					}
-					total=atoi(buffer);
-					Serial.println(total,DEC);
-					val[x]=total;
-				}
-				setColour(val[0],val[1],val[2]);	
-				p+=9;
+				break;
 			}
-			break;
-	}
+			case 'C':{
+				if(p<(MAX_JSON-10)){
+					// next 9 are our RGB values
+					Serial.print("Colour:");
+					total=0;
+					for(x=0;x<3;x++){
+						for(y=0;y<3;y++){
+							buffer[y]=ESPmsgbuffer[p+y+(x*3)+1];
+						}
+						total=atoi(buffer);
+						Serial.println(total,DEC);
+						val[x]=total;
+					}
+					setColour(val[0],val[1],val[2]);	
+					p+=9;
+				}
+				break;
+			}
 			case ']':   // end of JSON
 		{		p+=128; 
 			break;
@@ -530,7 +729,7 @@ break;
 		case 'T': // Time
 		{
 			p+=24;
-			break
+			break;
 		}
 		default :
 				
@@ -549,10 +748,8 @@ boolean sendBreak(){
 	delay(20);
 	mySerial.println("+++");
 	return ESPwaitMsg(2,2000);
-	
 }
 void setState(int s){
-	
 	Serial.println("\r\nState:"+(String)wifi_State+" To:"+(String) s);
 	delay(100);
 	wifi_State=s;
@@ -664,11 +861,9 @@ boolean sendPacket(){ // send data packet to host
 	// send it
 	String cmd ="AT+CIPSEND=";	
 	cmd+=datalength;
-	mySerial.println(cmd);
-	//Serial.print(data1);	// send CIPSEND command
+	mySerial.println(cmd);// send CIPSEND command
 	delay(10);
-	if(mySerial.find(">")){
-					
+	if(mySerial.find(">")){				
 		mySerial.print(data1); // send data
 		delay(5);
 		mySerial.print(data2); // send data
@@ -709,7 +904,7 @@ int  checkTimers(){
 
 		double p = getPressure();
 		if(p>0){
-			packetToSendFlag=true; // send forever for debug
+			packetToSendFlag=true; 
 			q=q+1;
 		}
 		else{
@@ -740,7 +935,7 @@ void rcvData(int n){
 }
 int setupBMP(){
 	if (pressure_sensor.begin())
-    Serial.println("BMP180 init success");
+    Serial.println("BMP180 init OK");
   else
   {
     Serial.println("BMP180 init fail");
@@ -771,7 +966,6 @@ boolean initESP(){
 	boolean line=false;
 	char r='N';
 	Serial.println("Nudge ESP..");
-	// mySerial.println("AT+RST");
 	mySerial.println("AT");
 	if(ESPwaitMsg(5,1000)){
 		flushESP(3000);
@@ -874,7 +1068,8 @@ int ESPgetLine(int msecs){
 	return charCount;
 }
 boolean ESPsetWifiMode(){
-	
+	return ESPcommand("AT+CWMODE=1",6,3000);
+/*
 	//flushESP(1000);
 	mySerial.println("AT+CWMODE=1");
 	
@@ -885,9 +1080,11 @@ boolean ESPsetWifiMode(){
 		
 	}
 	return false;
-	
+*/	
 }
 boolean ESPsetMux(){
+return ESPcommand("AT+CIPMUX=0",6,3000);
+/*
 	//flushESP(500);
 	mySerial.println("AT+CIPMUX=0");
 	if(ESPwaitMsg(5,1000)){
@@ -897,8 +1094,11 @@ boolean ESPsetMux(){
 		}
 	}
 	return false;
+	*/
 }
 boolean ESPsetMode(){
+return ESPcommand("AT+CIPMODE=0",6,3000);
+/*
 	mySerial.println("AT+CIPMODE=0");
 			if(ESPwaitMsg(5,1000)){
 				if(ESPokFlag){
@@ -908,25 +1108,20 @@ boolean ESPsetMode(){
 					return true;
 				}
 			}
+*/
 }
 boolean connectWifi(){
 	
-		String cmd2;
-	//	cmd2.reserve(32);
-		cmd2="AT+CWJAP=";  // 9 chars
-		//cmd2="AT+CWJAP=";  // 9 chars
-		//Serial.println(cmd2);
+		String cmd2="AT+CWJAP=";  // 9 chars
 		cmd2+="\"";				// 10
 		cmd2+=mySSID;			// 13
 		//Serial.println(cmd2);
-		cmd2+="\"";				//14
-		cmd2+=",";
+		cmd2+="\",";
 		cmd2+="\"";				//16
-		//Serial.println(cmd2);
 		cmd2+=myPassword;		//24	
-		//Serial.println(cmd2);
 		cmd2+="\"";				//25
-		//Serial.println(cmd2);
+	//	return ESPcommandString(cmd2,6,5000);
+	
 		mySerial.println(cmd2);
 		// delay(500);
 		if(ESPwaitMsg(20,2000)){
@@ -935,21 +1130,11 @@ boolean connectWifi(){
 			}
 		}
 	return false;
+	
 }
 boolean printIP(){
+	return ESPcommand("AT+CIFSR",6,3000);
 
-	mySerial.println("AT+CIFSR");
-	delay(100);
-	if(ESPwaitMsg(6,3000)){
-		if(ESPerrMsgFlag){ // ignore the first response
-			if(ESPwaitMsg(6,3000)){
-				if(ESPokFlag){
-					return true;
-				}
-			}
-		}
-	}
-	return false;
 }
 void hardResetESP(){
 	if(reset_counter<50){	
@@ -957,7 +1142,7 @@ void hardResetESP(){
 		digitalWrite(ESP_RESET_PIN,LOW);
 		delay(200);
 		digitalWrite(ESP_RESET_PIN,HIGH);
-		Serial.println("**ESP Reset**");	
+		Serial.println("*ESP Reset*");	
 	} 
 	else {
 			Serial.print(">RST Count**");
@@ -1025,13 +1210,21 @@ double getPressure() {
   else if(DEBUG_BMP)Serial.println("BMPERR starting Temp");
   return(0);
 }
-boolean ESPcommand(char* command){
+boolean ESPcommand(char* command, int lines, int timeout){
 	mySerial.println(command);
-	if(ESPwaitMsg(5,1000)){
+	boolean r=ESPgetLine(500); // dump the echo
+	if(ESPwaitMsg(lines,timeout)){
 		if(ESPokFlag||ESPnoChangeFlag||ESPlinkedFlag||ESPconnectFlag){
-			// send +RST to lock in the params
-			//mySerial.println("AT+RST");
-			//delay(2000);
+			return true;
+		}
+	}
+	return false;
+}
+boolean ESPcommandString(String command, int lines, int timeout){
+	mySerial.println(command);
+	boolean r=ESPgetLine(500); // dump the echo
+	if(ESPwaitMsg(lines,timeout)){
+		if(ESPokFlag||ESPnoChangeFlag||ESPlinkedFlag||ESPconnectFlag){
 			return true;
 		}
 	}
