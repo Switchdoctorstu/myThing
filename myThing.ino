@@ -1,6 +1,8 @@
 /*
   Stu's IOT station Core Code
-aa
+
+  (c) Stuart Oldfield 2015 but copied from many sources and if ever i make a billion i promise to pay all dues
+
 Arduno Pro Mini
 Pin 0 - serial
 Pin 1 - serial
