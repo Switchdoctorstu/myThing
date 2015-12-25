@@ -144,7 +144,7 @@ double BMPtemperature;  // Temperature of device
 
 void setup() {		// the setup function runs once when you press reset or power the board
 	//wdt_disable(); 	// disable the watchdog
-	int ret;
+	//int ret;
 	setupPins(); 	// set the io pins
 	setupSerial(); 	// setup the serial comms
 	ret=setupBMP(); // initialize the pressure sensor
@@ -230,17 +230,11 @@ String getSerial(){
 boolean validateConfig(){
 	Serial.println("Validate Config");
 	Serial.println("SSID:"+mySSID);
-	//Serial.println(mySSID);
 	Serial.println("WiFi Key:" + myPassword);
-	// Serial.println( myPassword);
 	Serial.println("Server:" + myServer);
-	// Serial.println(myServer);
 	Serial.println("Port:"+ myPort);
-	// Serial.println( myPort);
 	Serial.println("MyIPV6:"+myIPv6);
-	//Serial.println( myIPv6);
 	Serial.println("ServerIPV6:"+serverIPv6);
-	// Serial.println( serverIPv6);
 	Serial.print("Correct Y/N?");
 	String inLine=getSerial();
 	Serial.println();
