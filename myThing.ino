@@ -1,6 +1,6 @@
 /*
   Stu's IOT station Core Code
-aa
+
 Arduno Pro Mini
 Pin 0 - serial
 Pin 1 - serial
@@ -59,6 +59,9 @@ URL format:
 	Prs number
 	Pir number
 	
+JSON return:
+Crrrgggbbb	change colour
+Rnnnnnnnn	set relay outputs
 
   */
   
@@ -381,7 +384,8 @@ int checkWifi(){
 	//if(packetToSendFlag){
 		switch(wifi_State){
 			case 0:
-				if(initESP()){
+				Serial.println("Nudge ESP");
+				if( ESPcommand("AT",6,1000)){
 					setState(2);
 				} 
 				else{
@@ -472,8 +476,7 @@ int checkWifi(){
 				else{
 					Serial.println("NOTGot");
 					if(!ESPsipClose()){
-						flushESP(5000);				
-						
+						flushESP(5000);									
 					}
 				setState(6);
 				}
@@ -554,7 +557,7 @@ void doJson(){
 				break;
 			}
 			case ']':   // end of JSON
-		{		p+=128; 
+		{		p+=MAX_JSON; 
 			break;
 		}
 		case 'T': // Time
@@ -582,11 +585,15 @@ boolean sendBreak(){
 }
 void setState(int s){
 	Serial.println("\r\nState:"+(String)wifi_State+" To:"+(String) s);
-	delay(100);
+	int x=250/s;
 	wifi_State=s;
-	if(wifi_State<6){
-		ledColour(s);
+	for(int z=0;z<s;z++){
+		digitalWrite(13, HIGH);   // turn the LED on (HIGH is the voltage level)
+		delay(x);              // wait for a second
+		digitalWrite(13, LOW);    // turn the LED off by making the voltage LOW
+		delay(x); 
 	}
+	
 }
 int checkSerial(){
 	int q=0;
@@ -605,7 +612,7 @@ int getLight(){
 }
 int checkPresence(){
   val= digitalRead(12);
-	digitalWrite(13,val);
+	//digitalWrite(13,val);
 	if (val>0){
 	  presence=true;
 	} else { presence=false;}
@@ -794,11 +801,7 @@ void clearFlags(){
 	ESPlinkedFlag=false;
 	ESPfailFlag=false;	
 }
-boolean initESP(){
-	Serial.println("Nudge ESP");
-	return( ESPcommand("AT",6,1000));
-	
-}
+
 boolean chkFlags(){
 	if(ESPfailFlag || ESPokFlag || ESPnoChangeFlag || ESPerrMsgFlag || ESPconnectFlag || ESPreadyFlag || ESPlinkedFlag){
 			return true;
@@ -896,17 +899,7 @@ int ESPgetLine(int msecs){
 
 boolean ESPsetMode(){
 return ESPcommand("AT+CIPMODE=0",5,1000);
-/*
-	mySerial.println("AT+CIPMODE=0");
-			if(ESPwaitMsg(5,1000)){
-				if(ESPokFlag){
-					// send +RST to lock in the params
-					//mySerial.println("AT+RST");
-					//delay(2000);
-					return true;
-				}
-			}
-*/
+
 }
 boolean connectWifi(){
 	
@@ -939,7 +932,7 @@ void hardResetESP(){
 		digitalWrite(ESP_RESET_PIN,LOW);
 		delay(200);
 		digitalWrite(ESP_RESET_PIN,HIGH);
-		Serial.println("*ESP Reset*");	
+		Serial.println("*ESP RST*");	
 	} 
 	else {
 			Serial.print(">RST Count**");
@@ -1057,25 +1050,11 @@ void setupSerial(){		// Open serial communications and wait for port to open:
    delay(200);
 	
    }
-void ledColour(int d){
-	digitalWrite(RledPin,HIGH);
-	digitalWrite(GledPin,HIGH);
-	digitalWrite(BledPin,HIGH);
-		char c=d;
-	if((c  & B00000001)>0){
-	digitalWrite(RledPin,LOW);
-	}
-	if((c & B00000010)>0){
-		digitalWrite(BledPin,LOW);
-	}
-	if((c & B00000100)>0){
-		digitalWrite(GledPin,LOW);
-		}
-} 
+
 void setColour(int r,int g,int b){
-	analogWrite(RledPin,255-r);
-	analogWrite(GledPin,255-g);
-	analogWrite(BledPin,255-b);
+	analogWrite(RledPin,r);
+	analogWrite(GledPin,g);
+	analogWrite(BledPin,b);
 }
 void setTimers(){
 	sendTimer=millis()+sendInterval;
@@ -1096,7 +1075,6 @@ boolean eepromValid(){
 	if(ESPmsgbuffer[0]=='s'){
 		return true;
 	}
-	
 	return false;
 }
 boolean getConfig(){ // get the config from eeprom
@@ -1124,7 +1102,7 @@ boolean getConfig(){ // get the config from eeprom
 		}
 	}
 	else{
-		Serial.println("Invalid EEPROM data");
+		Serial.println("Bad EEPROM data");
 		if(manualConfig()){
 			return true;
 		};
